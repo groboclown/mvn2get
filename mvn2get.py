@@ -1,6 +1,34 @@
 #!/usr/bin/python3
 
+"""
+Tool to download artifact files from Maven 2 style repositories.
+
+Run with the `-h` argument for help.
+"""
+
 # Requires Python 3.7
+
+# MIT License
+#
+# Copyright (c) 2019 Groboclown
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 from typing import List, Tuple, Dict, Iterable, Mapping, Optional, Callable, Any
 import os
@@ -1057,9 +1085,7 @@ class PomFile(object):
             else:
                 add_problem(
                     self.decl.id(), [self.file], False,
-                    'Not an acceptable license ({0})'.format(
-                        ', '.join(unacceptable), self.decl.id()
-                    )
+                    'Not an acceptable license ({0})'.format(', '.join(unacceptable))
                 )
 
         # Make sure we only grab this pom's parent, and not some weird other place.
@@ -1737,11 +1763,8 @@ class MavenVersionRange(object):
 # XML Handling Stuff
 
 def parse_xml(filename: str, _tempdir: Optional[str] = None) -> xml.dom.minidom.Document:
-    # The maven XML files are sometimes garbage that need some fixing.
+    # The maven XML files are sometimes garbage and need some fixing.
     
-    # xsd = os.path.join(tempdir, 'maven-4.0.0.xsd')
-    # MAVEN_XSD_SRC = 'https://maven.apache.org/xsd/maven-4.0.0.xsd'
-    # download(MAVEN_XSD_SRC, xsd, False)
     with open(filename, 'r') as f:
         contents = f.read()
     
@@ -1754,7 +1777,7 @@ def parse_xml(filename: str, _tempdir: Optional[str] = None) -> xml.dom.minidom.
         '&oslash;', '-'
     ).replace(
         # javax/portlet/portlet-api fix...
-        '&nbsp;', ''
+        '&nbsp;', ' '
     ).replace(
         # com/amazonaws/aws-lambda-java-events contains unbound prefix xsi
         '<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/maven-v4_0_0.xsd">',

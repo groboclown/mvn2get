@@ -82,7 +82,7 @@ You can have a configuration file in several ways:
 1. Finally, anything you didn't specify in the configuration has the defaults used.
 
 
-```json
+```javascript
 {
   "show_progress": false,
   "log_level": "warn",
