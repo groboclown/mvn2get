@@ -12,9 +12,13 @@
 
 ## Pre-Push Checklist
 
+### Copyright Update
 
+Make sure the copyright information and date in the program and the license file are up-to-date.
 
-### Run the MyPy Linter
+### Run MyPy
+
+Make sure mypy reports no errors.
 
 ```bash
 python -m mypy --warn-unused-configs --no-incremental mvn2get.py
@@ -23,7 +27,9 @@ python -m mypy --warn-unused-configs --no-incremental mvn2get.py
 
 ### Run Unit Tests
 
-```
+Make sure the unit tests pass with no errors.  Additionally, coverage must not go down.
+
+```bash
 python -m coverage run --source . -m unittest discover -s . -p "*_test.py"
 
 # To view the generated coverage report

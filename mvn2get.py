@@ -49,6 +49,8 @@ import urllib.response
 from urllib.error import (HTTPError, URLError)
 
 
+VERSION = '1.0'
+
 # ---------------------------------------------------------------------------
 # User Configuration
 class Config:
@@ -237,7 +239,7 @@ class Problem:
             for f in self.files:
                 if os.path.isfile(f):
                     info("{0} - file in violation of policies; removing {1}".format(self.artifact_id, f))
-                    os.unlink(f)
+                    delete_file(f)
 
 
 PROBLEMS: List[Problem] = []
@@ -309,6 +311,7 @@ DEFAULT_ACCEPTABLE_LICENSE_URLS = (
 
     # Apache Software License, version 2
     'http://opensource.org/licenses/apache2.0.php',
+    'http://opensource.org/licenses/Apache-2.0',
     'http://www.opensource.org/licenses/apache2.0.php',
     'http://www.apache.org/licenses/LICENSE-2.0',
     'http://www.apache.org/licenses/LICENSE-2.0.txt',
@@ -318,10 +321,9 @@ DEFAULT_ACCEPTABLE_LICENSE_URLS = (
     'http://www.scala-lang.org/downloads/license.html',  # prior to December 2018, this was BSD 3-clause
     'https://www.apache.org/licenses/LICENSE-2.0.txt',
     'https://raw.github.com/jsr107/jsr107spec/master/LICENSE.txt',
-    
+
     # Apple License
-    'http://developer.apple.com/library/mac/#samplecode/AppleJavaExtensions/Listings/README_txt.html#'
-    '//apple_ref/doc/uid/DTS10000677-README_txt-DontLinkElementID_3',
+    'http://developer.apple.com/library/mac/#samplecode/AppleJavaExtensions/Listings/README_txt.html#//apple_ref/doc/uid/DTS10000677-README_txt-DontLinkElementID_3',
     
     # BSD (unknown clause count)
     'http://xmlunit.svn.sourceforge.net/viewvc/*checkout*/xmlunit/trunk/xmlunit/LICENSE.txt',
@@ -416,11 +418,7 @@ DEFAULT_ACCEPTABLE_LICENSE_URLS = (
     'https://www.eclipse.org/legal/epl-v20.html',
     'http://www.eclipse.org/legal/epl-2.0',
     'https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.txt',
-    
-    # Indiana University Extreme! Lab Software License, vesion 1.1.1
-    # No idea what this is.
-    # 'http://www.extreme.indiana.edu/viewcvs/~checkout~/XPP3/java/LICENSE.txt',
-    
+
     # The PostgreSQL License
     'http://www.postgresql.org/about/licence/',
     
@@ -519,8 +517,8 @@ CONFIG = Config()
 
 # ---------------------------------------------------------------------------
 # General Constants
-LINK_START_PATTERN = '<a href="'
-LINK_END_PATTERN = '"'
+FULL_LINK_PATTERN = re.compile(r'<a\s+(.*?)>\s*(.*?)\s*</a>')
+HREF_PATTERN = re.compile(r'href\s*=\s*["\'](.*?)["\']')
 
 
 # ---------------------------------------------------------------------------
@@ -537,12 +535,13 @@ def urlopen(url: str) -> Any:
 
 
 class ToDownload:
-    __slots__ = ('url', 'filename', 'overwrite',)
+    __slots__ = ('url', 'filename', 'overwrite', 'required')
 
-    def __init__(self, url: str, filename: str, overwrite: bool) -> None:
+    def __init__(self, url: str, filename: str, overwrite: bool, required: bool) -> None:
         self.url = url
         self.filename = filename
         self.overwrite = overwrite
+        self.required = required
 
 
 def download_artifact(dest_dir: str, artifact_id: str) -> None:
@@ -563,11 +562,11 @@ def download_artifact(dest_dir: str, artifact_id: str) -> None:
         if not os.path.isdir(dest_path):
             os.makedirs(dest_path)
         to_download: List[ToDownload] = []
-        for filename in get_files_in(source_url, dest_dir):
+        for filename, required in get_files_in(source_url, dest_dir):
             if is_valid_filename(filename):
                 output_file = os.path.join(dest_path, filename)
                 file_url = source_url + filename
-                to_download.append(ToDownload(file_url, output_file, CONFIG.overwrite))
+                to_download.append(ToDownload(file_url, output_file, CONFIG.overwrite, required))
             else:
                 info("Skipping file {0} (invalid file)".format(filename))
         if not to_download:
@@ -604,12 +603,14 @@ def download_file_list(artifact_list: List[ToDownload]) -> None:
         try:
             progress("downloading {0}".format(to_download.url))
             trace("Downloading {0}".format(to_download.url))
-            download(to_download.url, to_download.filename, to_download.overwrite)
+            download(
+                to_download.url, to_download.filename, to_download.overwrite,
+                show_404=to_download.required
+            )
         except BaseException:
             # Assume the download died part-way through.  We can't guarantee
             # that the file was downloaded right.
-            if os.path.isfile(to_download.filename):
-                os.unlink(to_download.filename)
+            delete_file(to_download.filename)
             raise
         # TODO check if the file already exists in local repository.
     
@@ -632,7 +633,7 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
     if os.path.isfile(filename):
         if overwrite:
             debug("Overwriting existing file {0}".format(filename))
-            os.unlink(filename)
+            delete_file(filename)
         else:
             debug("Skipping existing file {0}".format(filename))
             return True
@@ -671,8 +672,7 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
                 progress("Encountered {0} error.  Waiting to try again: {1}".format(str(e), url[url.rindex('/'):]))
                 last_err = e
             retry -= 1
-        if os.path.isfile(filename):
-            os.unlink(filename)
+        delete_file(filename)
         if show_errors:
             if last_err:
                 add_problem(url, [filename], True, "Failed to download: {0} (too many disconnects)".format(last_err))
@@ -681,8 +681,7 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
         return False
     except HTTPError as e:
         # Could be a partial download.  Don't keep it.
-        if os.path.isfile(filename):
-            os.unlink(filename)
+        delete_file(filename)
         if e.code == 404 or e.code == 308:
             if show_404:
                 add_problem(url, [filename], True, "Failed to download: {0}".format(e))
@@ -691,21 +690,19 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
         return False
     except URLError as e:
         # Could be a partial download.  Don't keep it.
-        if os.path.isfile(filename):
-            os.unlink(filename)
+        delete_file(filename)
         if show_errors:
             add_problem(url, [filename], True, "Incorrectly constructed URL")
             raise e
         return False
     except BaseException:
         # Could be a partial download.  Don't keep it.
-        if os.path.isfile(filename):
-            os.unlink(filename)
+        delete_file(filename)
         warn("Error downloading {0} into {1}".format(url, filename))
         raise
 
 
-def get_files_in(url: str, outdir: str) -> List[str]:
+def get_files_in(url: str, outdir: str) -> List[Tuple[str, bool]]:
     """
     Load the maven repo page for the URL (it should be the directory for the
     artifact), and parse the HTML that lists the files.  There might be a
@@ -713,7 +710,7 @@ def get_files_in(url: str, outdir: str) -> List[str]:
     """
     outfile = os.path.join(
         tmpdir(outdir),
-        url.replace(':', '_').replace('/', '_')
+        url.replace(':', '_').replace('/', '_').replace('?', '_').replace('+', '_')
     )
     if not download(url=url, filename=outfile, overwrite=False, show_errors=True, show_404=False):
         return []
@@ -721,23 +718,35 @@ def get_files_in(url: str, outdir: str) -> List[str]:
         progress("reading from {0}".format(outfile))
         page = f.read().decode('utf-8')
     ret: List[str] = []
-    pos = page.find(LINK_START_PATTERN)
-    while pos >= 0:
-        pos += len(LINK_START_PATTERN)
-        end_pos = page.find(LINK_END_PATTERN, pos)
-        if end_pos > pos:
-            file_url = page[pos:end_pos]
-            pos = end_pos + len(LINK_END_PATTERN)
-            if file_url is None or len(file_url) <= 0:
+    for a_tag_attributes, display_text in FULL_LINK_PATTERN.findall(page):
+        # display_text may not show the real link.
+        href = HREF_PATTERN.search(a_tag_attributes)
+        if href:
+            file_url = href.group(1)
+            if not file_url:
                 continue
-            while file_url[0] == '/':
+            # Some repositories put extra junk in front of the link.
+            while file_url[0] in '/:':
                 file_url = file_url[1:]
-            if not file_url.startswith('..'):
+            if file_url and not file_url.startswith('..'):
                 # Just the name of the file; no URL.
                 ret.append(file_url)
-            
-        pos = page.find(LINK_START_PATTERN, pos)
-    return ret
+
+    # Some repos do not list the checksum and PGP signatures.
+    # Explicitly add these to the list.
+    final_ret: List[Tuple[str, bool]] = []
+    for file_url in ret:
+        final_ret.append((file_url, True,))
+        for ext in VERIFY_FILE_EXTENSIONS:
+            if file_url.endswith(ext):
+                continue
+            extended = file_url + ext
+            if extended in ret:
+                continue
+            # We're guessing that this file exists, so therefore it's not required.
+            final_ret.append((extended, False,))
+
+    return final_ret
 
 
 def parallel_jobs(callable_list: List[Tuple[Callable[[ToDownload], None], ToDownload]]) -> None:
@@ -775,7 +784,7 @@ def maven_artifact_path_for_url(url: str) -> str:
     """Get the artifact path for the given maven repo URL."""
     for prefix in CONFIG.remote_repo_urls:
         if url.startswith(prefix):
-            return url[len(prefix):]
+            return os.path.normpath(url[len(prefix):])
     raise ValueError('unknown artifact url ' + str(url))
 
 
@@ -828,6 +837,9 @@ def convert_to_repo_urls_from_artifact(aid: str, use_version: bool = True) -> Li
 
 # ---------------------------------------------------------------------------
 # Artifact file validation
+
+VERIFY_FILE_EXTENSIONS = ('.md5', '.sha1', '.asc', '.md5.asc', '.sha1.asc', '.asc.md5', '.asc.sha1',)
+
 
 def verify_checksums(artifact_id: str, dest_path: str) -> None:
     """Perform appropriate verification for the downloaded files."""
@@ -1337,8 +1349,7 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
                 ret.missing = True
             info("  *> Using cached temp dependency {0}".format(dependency.id()))
             # Note: not removing the temp file, for restart performance.
-            # if os.path.isfile(tf):
-            #     os.unlink(tf)
+            # delete_file(tf)
             return ret
         except ExpatError as e:
             add_problem(
@@ -1386,13 +1397,11 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
                 info("  !> Failed to parse {0}: {1}".format(tf, repr(e)))
                 # Keep the file around for debugging
                 return None
-            if os.path.isfile(tf):
-                os.unlink(tf)
+            delete_file(tf)
             ret.missing = True
             return ret
         # Note: not removing the temp file, for restart performance.
-        # if os.path.isfile(tf):
-        #    os.unlink(tf)
+        # delete_file(tf)
     return None
 
 
@@ -1655,7 +1664,7 @@ class MavenMetaFile(object):
                 except ExpatError as e:
                     add_problem(
                         meta_url, [tf], True,
-                        "Invalid metadata file {0}".format(meta_url)
+                        "Invalid metadata file {0}".format(tf)
                     )
                     debug(" --- downloaded into {0}; parse error {1}".format(tf, e))
             
@@ -1889,7 +1898,22 @@ def check_license_name(license_name: str, against: str) -> bool:
 
 def check_license_url(license_url: str, against: str) -> bool:
     return license_url.lower() == against.lower()
-    
+
+
+# ---------------------------------------------------------------------------
+# General file utilities
+
+def delete_file(filename: str) -> None:
+    if os.path.isfile(filename):
+        try:
+            os.unlink(filename)
+        except PermissionError:
+            # Ignore.  Windows threading can encounter this issue.
+            debug("Skipping permission error when deleting {0}".format(filename))
+        except FileNotFoundError:
+            # Ignore.  This can happen in some interesting situations on Windows.
+            debug("Couldn't delete file because it doesn't exist: {0}".format(filename))
+
 
 # ---------------------------------------------------------------------------
 # Main Program
@@ -1897,6 +1921,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="""Tool to download dependencies
 from a remote Maven Repo for checking usage, before adding into the local maven
 repo.  All the files in the remote repo for the artifact will be pulled down.""")
+    parser.add_argument(
+        '--version', dest='show_version', action='store_true', default=False,
+        help="Show the program version and exit."
+    )
     parser.add_argument(
         '-d', '--dir', dest='output', default=None,
         help="directory to store the downloaded files (defaults to the current directory)"
@@ -1956,6 +1984,10 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
     )
 
     parsed = parser.parse_args()
+    if parsed.show_version:
+        print("v" + VERSION)
+        sys.exit(0)
+
     if parsed.config_file:
         CONFIG.load(str(parsed.config_file))
     CONFIG.load(os.path.join(os.path.curdir, DEFAULT_CONFIGURATION_FILE_NAME))

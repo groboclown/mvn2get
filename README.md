@@ -6,6 +6,7 @@ The tool will pull all the published files for the artifact and optionally pull 
 
 The tool is a single Python file that does not use external dependencies to operate.  It natively finds the resources and parses the POM files and verifies the downloaded files.  If you want to verify PGP signatures on the downloaded files, you will need to install the `gnupg` Python package.
 
+Current version: [1.0]() ([changes](CHANGELOG.md))
 
 ## Usage
 
@@ -43,7 +44,7 @@ Most of these options can have a default value declared in the [configuration fi
 * **-h, --help**
     * Show the help.
 * **-r, --resolve**
-    * resolve the POM files and their dependencies, recursively
+    * resolve the POM files and their dependencies, recursively.  Note that if the POM declares a dependency and it has already been downloaded, but that dependency's dependencies have not, then the recrusive dependencies are *not* downloaded.
 * **-d OUTPUT, --dir OUTPUT**
     * directory to store the downloaded files (defaults to the current directory)
 * **-O, --overwrite**
@@ -53,7 +54,7 @@ Most of these options can have a default value declared in the [configuration fi
 * **-p, --progress**
     * Show progress indicator
 * **-P, --parent**
-    * Download dependency management children (declared in parent and bom files)
+    * Download dependency management children (declared in parent and bom files).  Careful - this can download far more than you're expecting.  Note that if the parent has been downloaded, but its dependencies have not, then the dependencies are not downloaded.
 * **-e ERROR_FILE, --error-file ERROR_FILE**
     * Add all discovered problems into the ERROR_FILE, for easier viewing or sending.
 * **-x, --no-local**
@@ -141,7 +142,35 @@ You can have a configuration file in several ways:
 * `allow_no_license` - If the POM does not declare a license and this is `false`, then the artifact is not downloaded.  Defaults to `true`.
 * `mislabeled_artifact_groups` - In some cases, a POM mis-declares a dependency.  All artifact IDs that start with the key in this dictionary will have the group name replaced with the first value in the list, and the artifact ID will be prefixed with the second, and have the key prefix removed.
 
+## Examples
 
-# License
+### Download Dependencies That Are Not In Another Repo
+
+Let's say we want to download `org.sonatype.goodies.dropwizard:dropwizard-support-core:1.0.3` and its dependencies from `jcenter`, but not those that are in `maven.org`.
+
+Because this alters the list of repositories, this requires that the configuration file be used.  First, create a `mvn2get.json` file like so:
+
+```json
+{
+  "local_repo_urls": ["https://repo1.maven.org/maven2/"],
+  "remote_repo_urls": ["https://jcenter.bintray.com/"]
+} 
+```
+
+Then run the command, specifying the configuration file:
+
+```bash
+mvn2get.py -r -p --config mvn2get.json org.sonatype.goodies.dropwizard:dropwizard-support-core:1.0.3
+```
+
+
+### Download Far Too Much
+
+```bash
+mvn2get.py -r -p --parent io.dropwizard:dropwizard-metrics-graphite:2.0.0
+```
+
+
+## License
 
 [MIT](LICENSE)
