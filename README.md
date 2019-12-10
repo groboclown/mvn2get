@@ -67,7 +67,7 @@ Most of these options can have a default value declared in the [configuration fi
 * **--require-license**
     * Require that all downloaded artifacts must define a license name or URL.
 * **-c CONFIG_FILE, --config CONFIG_FILE**
-    * [configuration file][#configuration] to read default options from.  If not given, then the file `.mvn2get.json` in the current directory is loaded, and if that doesn't exist, the file `.mvn2get.json` in your home directory is loaded.
+    * [configuration file](#configuration) to read default options from.  If not given, then the file `.mvn2get.json` in the current directory is loaded, and if that doesn't exist, the file `.mvn2get.json` in your home directory is loaded.
 * **artifact**
     * 1 or more artifact specification to download.  These are either Maven-style URLs or gradle compact artifact notation (group:artifact:version).
 
