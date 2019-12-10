@@ -19,7 +19,7 @@ The tool is a single Python file that does not use external dependencies to oper
     $ wget https://github.com/groboclown/mvn2get/blob/master/mvn2get.py
     $ chmod +x mvn2get.py
     ```
-1. (optional) [Configure][#configuration] local settings.
+1. (optional) [Configure](#configuration) local settings.
     ```bash
     $ vi ~/.mvn2get.json
     ```
