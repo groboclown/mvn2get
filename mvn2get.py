@@ -48,6 +48,8 @@ class Config:
         self.do_remote_download = True
         self.include_dep_management = False
         self.check_in_local = True
+        self.no_pgp = False
+        self.clean_violations = False
 
         self.progress_indicators = "|/-\\"
         self.remote_repo_urls = list(DEFAULT_REMOTE_REPO_URLS)
@@ -78,6 +80,8 @@ class Config:
         self._set_bool(data, 'overwrite')
         self._set_bool(data, 'do_remote_download')
         self._set_bool(data, 'include_dep_management')
+        self._set_bool(data, 'check_in_local')
+        self._set_bool(data, 'no_pgp')
         self._set_str(data, 'progress_indicators')
         self._set_list_of_str(data, 'remote_repo_urls')
         self._set_list_of_str(data, 'local_repo_urls')
@@ -146,7 +150,15 @@ try:
 
     def setup_gpg(outdir: str) -> None:
         global GPG_INST
-        GPG_INST = gnupg.GPG(homedir=os.path.join(outdir, '.gnupg'))
+        try:
+            # Different versions of gnupg have different constructors.
+            try:
+                GPG_INST = gnupg.GPG(homedir=os.path.join(outdir, '.gnupg'))
+            except TypeError:
+                GPG_INST = gnupg.GPG(gnupghome=os.path.join(outdir, '.gnupg'))
+        except RuntimeError:
+            # This is thrown if GnuPG binary cannot be found.
+            GPG_INST = None
 except ModuleNotFoundError:
     # noinspection PyUnusedLocal
     def setup_gpg(outdir: str) -> None:
@@ -168,7 +180,44 @@ LOG_MAP = {
 }
 
 PROGRESS_INDEX = [0]
-PROBLEMS = []
+
+
+class Problem:
+    __slots__ = ('msg', 'artifact_id', 'files', 'file_violation',)
+
+    def __init__(self, artifact_id: str, files: Iterable[str], file_violation: bool, msg: str) -> None:
+        self.msg = msg
+        self.artifact_id = artifact_id
+        self.files = list(files)
+        self.file_violation = file_violation
+
+    def __str__(self) -> str:
+        if self.file_violation:
+            return 'VIOLATION {0} - {1}'.format(self.artifact_id, self.msg)
+        return '{0} - {1}'.format(self.artifact_id, self.msg)
+
+    def json(self) -> Dict[str, Any]:
+        return {
+            "msg": self.msg,
+            "artifact": self.artifact_id,
+            "files": list(self.files),
+            "file_violation": self.file_violation
+        }
+
+    def clean_violations(self) -> None:
+        if self.file_violation and CONFIG.clean_violations:
+            for f in self.files:
+                if os.path.isfile(f):
+                    info("{0} - file in violation of policies; removing {1}".format(self.artifact_id, f))
+                    os.unlink(f)
+
+
+PROBLEMS: List[Problem] = []
+
+
+def add_problem(artifact_id: str, files: Iterable[str], file_violation: bool, msg: str) -> None:
+    PROBLEMS.append(Problem(artifact_id, files, file_violation, msg))
+
 
 # Windows / Linux / etc os support
 if sys.platform == 'win32':
@@ -199,6 +248,7 @@ except BaseException:
 # ---------------------------------------------------------------------------
 # Configuration Defaults
 
+DEFAULT_CONFIGURATION_FILE_NAME = '.mvn2get.json'
 DEFAULT_LOG_LEVEL = LOG_WARN
 DEFAULT_REMOTE_REPO_URLS = (
     'https://repo1.maven.org/maven2/',
@@ -394,13 +444,10 @@ DEFAULT_ACCEPTABLE_LICENSE_URLS = (
     # 'http://www.gnu.org/licenses/old-licenses/gpl-2.0.html',
     # Generic GNU license doesn't tell us what's what.
     # 'http://www.gnu.org/licenses/licenses.html',
-    
+
     # Not currently allowed.
     # Gatling Highcharts License
     # https://raw.githubusercontent.com/gatling/gatling-highcharts/master/LICENSE
-    
-    # New Relic License
-    'https://newrelic.com/docs/java/java-agent-license',
 )
 DEFAULT_ACCEPTABLE_LICENSE_NAMES = (
     # Apache License Version 2.0
@@ -500,7 +547,7 @@ def download_artifact(dest_dir: str, artifact_id: str) -> None:
             continue
         found = True
         download_file_list(to_download)
-        verify_checksums(dest_path)
+        verify_checksums(artifact_id, dest_path)
         deps = get_required_dependencies(dest_dir, dest_path)
         if CONFIG.recursive:
             for d in deps:
@@ -510,9 +557,9 @@ def download_artifact(dest_dir: str, artifact_id: str) -> None:
                 download_artifact(dest_dir, d)
         else:
             for d in deps:
-                PROBLEMS.append("{1}: requires missing dependency {0}".format(d, artifact_id))
+                add_problem(artifact_id, [], False, "requires missing dependency {0}".format(d))
     if not found:
-        PROBLEMS.append("Did not find any artifact at {0}".format(source_urls))
+        add_problem(artifact_id, [], False, "Did not find any artifact at {0}".format(source_urls))
 
 
 def download_file_list(artifact_list: List[ToDownload]) -> None:
@@ -600,9 +647,9 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
             os.unlink(filename)
         if show_errors:
             if last_err:
-                PROBLEMS.append("Failed to download {0} : {1} (too many disconnects)".format(url, last_err))
+                add_problem(url, [filename], True, "Failed to download: {0} (too many disconnects)".format(last_err))
             else:
-                PROBLEMS.append("Failed to download {0} (too many disconnects)".format(url))
+                add_problem(url, [filename], True, "Failed to download (too many disconnects)")
         return False
     except HTTPError as e:
         # Could be a partial download.  Don't keep it.
@@ -610,16 +657,16 @@ def download(url: str, filename: str, overwrite: bool, show_errors: bool = True,
             os.unlink(filename)
         if e.code == 404 or e.code == 308:
             if show_404:
-                PROBLEMS.append("Failed to download {0} : {1}".format(url, e))
+                add_problem(url, [filename], True, "Failed to download: {0}".format(e))
         elif show_errors:
-            PROBLEMS.append("Failed to download {0} : {1}".format(url, e))
+            add_problem(url, [filename], True, "Failed to download: {0}".format(e))
         return False
     except URLError as e:
         # Could be a partial download.  Don't keep it.
         if os.path.isfile(filename):
             os.unlink(filename)
         if show_errors:
-            PROBLEMS.append("Incorrectly constructed URL ({0})".format(url))
+            add_problem(url, [filename], True, "Incorrectly constructed URL")
             raise e
         return False
     except BaseException:
@@ -719,20 +766,24 @@ def convert_to_repo_urls_from_url(src_url: str) -> List[str]:
             parts = [*parts[0].split('.'), *parts[1:]]
         ret: List[str] = []
         for prefix in CONFIG.remote_repo_urls:
-            ret.append(prefix + "/".join(parts))
+            repo_url = prefix + "/".join(parts)
+            if not repo_url[-1] == '/':
+                repo_url += '/'
+            ret.append(repo_url)
         return ret
 
-    PROBLEMS.append("Unknown source repository for `{0}`.".format(src_url))
+    add_problem(src_url, [], False, "Unknown source repository.")
     return []
 
-    
+
 def convert_to_repo_urls(artifact_id: str) -> List[str]:
     if artifact_id.startswith("http://") or artifact_id.startswith("https://"):
         return convert_to_repo_urls_from_url(artifact_id)
     if artifact_id.count(':') == 2:
         return convert_to_repo_urls_from_artifact(artifact_id)
-    PROBLEMS.append(
-        "Unknown format for `{0}`.  Must be either a maven repo URL or group:artifact:version".format(artifact_id)
+    add_problem(
+        artifact_id, [], False,
+        "Unknown format artifact format.  Must be either a maven repo URL or group:artifact:version"
     )
     return []
 
@@ -747,19 +798,22 @@ def convert_to_repo_urls_from_artifact(aid: str, use_version: bool = True) -> Li
     return ret
 
 
-def verify_checksums(dest_path: str) -> None:
+# ---------------------------------------------------------------------------
+# Artifact file validation
+
+def verify_checksums(artifact_id: str, dest_path: str) -> None:
     """Perform appropriate verification for the downloaded files."""
     for filename in os.listdir(dest_path):
         if not (filename.endswith('.sha1') or filename.endswith('.md5')):
             path = os.path.join(dest_path, filename)
-            verify_checksum(path, 'md5')
-            verify_checksum(path, 'sha1')
+            verify_checksum(artifact_id, path, 'md5')
+            verify_checksum(artifact_id, path, 'sha1')
         
         # Note: no 'else', because .asc files can have checksums.
         if filename.endswith('.asc'):
             base_file = os.path.join(dest_path, filename[:-4])
             if os.path.isfile(base_file):
-                verify_pgp(base_file, os.path.join(dest_path, filename))
+                verify_pgp(artifact_id, base_file, os.path.join(dest_path, filename))
             else:
                 debug(
                     " - Downloaded asc file ({0}) with no corresponding signed file (expected {1})".format(
@@ -768,7 +822,7 @@ def verify_checksums(dest_path: str) -> None:
                 )
 
 
-def verify_checksum(path: str, hash_name: str) -> None:
+def verify_checksum(artifact_id: str, path: str, hash_name: str) -> None:
     """Verify the hash of the source file."""
     ck_file = path + '.' + hash_name
     if os.path.isfile(ck_file):
@@ -786,16 +840,18 @@ def verify_checksum(path: str, hash_name: str) -> None:
         with open(path, "rb") as fb:
             ck.update(fb.read())
         if ck.hexdigest() != ck_expected:
-            PROBLEMS.append("{0} {3} does not match downloaded checksum file ({1} vs {2})".format(
-                path, ck.hexdigest(), ck_expected, hash_name))
-            exit_program(2)
+            add_problem(
+                artifact_id, [path], True, "{0} {3} does not match downloaded checksum file ({1} vs {2})".format(
+                    path, ck.hexdigest(), ck_expected, hash_name
+                )
+            )
     elif not path.endswith('.asc'):
         # .asc files *should* have a checksum, but often they don't.
         info("  !> {0} has no {1} file".format(os.path.basename(path), hash_name))
 
-        
-def verify_pgp(src_file: str, signature_file: str) -> None:
-    if GPG_INST is None or not CONFIG.pgp_key_servers:
+
+def verify_pgp(artifact_id: str, src_file: str, signature_file: str) -> None:
+    if GPG_INST is None or not CONFIG.pgp_key_servers or CONFIG.no_pgp:
         debug(" - skipped PGP signature checking of {0}".format(src_file))
         return
     
@@ -815,15 +871,27 @@ def verify_pgp(src_file: str, signature_file: str) -> None:
         debug("  -- key id: {0}, sig id: {1}, fingerprint: {2}, trust: {3}".format(
             verify.key_id, verify.signature_id, verify.fingerprint, verify.trust_text))
     elif verify.status.lower() == 'no public key':
-        PROBLEMS.append("PGP signature could not be validated for {0}: {1}".format(src_file, verify.status))
+        add_problem(
+            artifact_id, [src_file, signature_file], True,
+            "PGP signature could not be validated for {0}: {1}".format(src_file, verify.status)
+        )
     elif verify.status.lower() == 'signature bad':
         # Signature in the file is bad, not a failed validation.
-        PROBLEMS.append("PGP signature validation failed for {0}: signature file is corrupted".format(src_file))
+        add_problem(
+            artifact_id, [signature_file], True,
+            "PGP signature validation failed for {0}: signature file is corrupted".format(src_file)
+        )
     elif verify.status.lower() != 'signature valid':
-        PROBLEMS.append("PGP signature validation failed for {0}: {1}".format(src_file, verify.status))
+        add_problem(
+            artifact_id, [src_file, signature_file], True,
+            "PGP signature validation failed for {0}: {1}".format(src_file, verify.status)
+        )
     else:
         info("  !> PGP signature not valid, but valid?")
 
+
+# ---------------------------------------------------------------------------
+# POM loading
 
 def get_required_dependencies(outdir: str, path: str) -> List[str]:
     progress("loading pom file {0}".format(path))
@@ -868,14 +936,17 @@ def get_required_dependencies(outdir: str, path: str) -> List[str]:
                     break
         dp = load_pom_file(outdir, d)
         if dp is None:
-            PROBLEMS.append("Could not find declared dependency {0} (declared in {1})".format(d.id(), pom.decl.id()))
+            add_problem(
+                pom.decl.id(), [], False,
+                "Could not find declared dependency {0}".format(d.id())
+            )
             continue
         if dp.missing:
             ret.append(dp.decl.id())
     
     return ret
 
-    
+
 def load_version_info(outdir: str, dependency: 'Dependency') -> bool:
     """check the maven-metadata.xml file for the version number."""
     meta = MavenMetaFile(outdir, dependency)
@@ -911,7 +982,12 @@ class PomFile(object):
     def __init__(self, filename: str, ref_dependency: Optional['Dependency']) -> None:
         self.file = os.path.basename(filename)
         self.missing = False
-        
+        self.valid = True
+        self.licenses = []
+        self.parent_dependencies = []
+        self.dep_reference = []
+        self.dependencies = []
+
         pom_dom = parse_xml(filename)
 
         self.decl = Dependency(pom_dom.getElementsByTagName('project')[0])
@@ -932,9 +1008,8 @@ class PomFile(object):
             
         self.properties = pom_get_properties(pom_dom)
         
-        # TODO make this license check outside the constructor.
         # For now, pom license parsing is internal.
-        self.licenses = []
+        # Should be moved outside of this, so that license issues invalidate the whole artifact.
         acceptable_count = 0
         unacceptable = []
         for el in pom_dom.getElementsByTagName('license'):
@@ -959,21 +1034,34 @@ class PomFile(object):
             if not found_lic:
                 unacceptable.append("{0} ({1})".format(lic.name, lic.url))
         if len(self.licenses) <= 0:
-            PROBLEMS.append('No license declared for {0}'.format(self.decl.id()))
             if not CONFIG.allow_no_license:
-                self.missing = True
-                return
-        elif acceptable_count <= 0:
-            PROBLEMS.append(
-                'Not an acceptable license ({0}) for {1}'.format(
-                    ', '.join(unacceptable), self.decl.id()
+                add_problem(
+                    self.decl.id(), [self.file], True,
+                    'No license declared in violation of license restriction.'
                 )
-            )
+                self.valid = False
+            else:
+                add_problem(
+                    self.decl.id(), [self.file], False,
+                    'No license declared.'
+                )
+        elif acceptable_count <= 0:
             if not CONFIG.allow_unacceptable_licenses:
-                self.missing = True
-                return
-        
-        self.parent_dependencies = []
+                add_problem(
+                    self.decl.id(), [self.file], True,
+                    'Not an acceptable license ({0}) in violation of license restriction'.format(
+                        ', '.join(unacceptable)
+                    )
+                )
+                self.valid = False
+            else:
+                add_problem(
+                    self.decl.id(), [self.file], False,
+                    'Not an acceptable license ({0})'.format(
+                        ', '.join(unacceptable), self.decl.id()
+                    )
+                )
+
         # Make sure we only grab this pom's parent, and not some weird other place.
         for el in xml_getnodes(pom_dom, 'parent'):
             parent = Dependency(el)
@@ -997,8 +1085,6 @@ class PomFile(object):
                 self.decl.version_range = parent.version_range
                 self.properties = pom_get_properties(pom_dom)
         
-        self.dep_reference = []
-        self.dependencies = []
         for dep_group in xml_getnodes(pom_dom, 'dependencyManagement'):
             for deps in xml_getnodes(dep_group, 'dependencies'):
                 debug("Checking dependency management section")
@@ -1210,7 +1296,7 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
             info("  *> Using local repo pom file {0} for {1}".format(pom_file, dependency.id()))
             return ret
         except ExpatError as e:
-            PROBLEMS.append("Failed to parse POM file {0}".format(pom_file))
+            add_problem(pom_file, [pom_file], True, "Failed to parse POM file {0}".format(pom_file))
             info("  !> Failed to parse {0}: {1}".format(pom_file, repr(e)))
             return None
 
@@ -1220,7 +1306,7 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
         try:
             ret = PomFile(tf, dependency)
             # The only way that this is valid is if the file was downloaded
-            # from a local repo.
+            # from a local repo, meaning that it is a known-to-exist-so-don't-download artifact.
             if not os.path.isfile(tf + '..local'):
                 ret.missing = True
             info("  *> Using cached temp dependency {0}".format(dependency.id()))
@@ -1229,7 +1315,10 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
             #     os.unlink(tf)
             return ret
         except ExpatError as e:
-            PROBLEMS.append("Failed to parse POM file {0}".format(tf))
+            add_problem(
+                tf, [pom_file, tf], True,
+                "Failed to parse cached POM file"
+            )
             info("  !> Failed to parse {0}: {1}".format(tf, repr(e)))
             # Keep the file around for debugging
             return None
@@ -1250,7 +1339,10 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
                         f.write("Downloaded from local repo")
                     return ret
                 except ExpatError as e:
-                    PROBLEMS.append("Failed to parse POM file {0}".format(tf))
+                    add_problem(
+                        pom_file, [pom_file, tf], True,
+                        "Failed to parse POM file {0}".format(tf)
+                    )
                     info("  !> Failed to parse {0}: {1}".format(tf, repr(e)))
                     # Keep the file around for debugging
                     return None
@@ -1261,7 +1353,10 @@ def load_pom_file(outdir: str, dependency: Dependency) -> Optional[PomFile]:
             try:
                 ret = PomFile(tf, dependency)
             except ExpatError as e:
-                PROBLEMS.append("Failed to parse POM file {0}".format(tf))
+                add_problem(
+                    pom_file, [pom_file, tf], True,
+                    "Failed to parse POM file {0}".format(tf)
+                )
                 info("  !> Failed to parse {0}: {1}".format(tf, repr(e)))
                 # Keep the file around for debugging
                 return None
@@ -1286,7 +1381,10 @@ def load_parent_pom_tree(outdir: str, child: PomFile, dependency: Dependency) ->
     else:
         opt_parent = load_pom_file(outdir, dependency)
         if opt_parent is None:
-            PROBLEMS.append("Could not find declared parent of {0}".format(child.decl.id()))
+            add_problem(
+                child.decl.id(), [], False,
+                "Could not find declared parent {0}".format(dependency.id())
+            )
             return None
         parent = opt_parent
         LOADED_PARENT_POMS_CACHE[dependency.id()] = parent
@@ -1528,9 +1626,12 @@ class MavenMetaFile(object):
                             self.releases.append(MavenVersion(v))
                     found = True
                     break
-                except ExpatError:
-                    PROBLEMS.append("Invalid metadata file {0}".format(meta_url))
-                    debug(" --- downloaded into {0}".format(tf))
+                except ExpatError as e:
+                    add_problem(
+                        meta_url, [tf], True,
+                        "Invalid metadata file {0}".format(meta_url)
+                    )
+                    debug(" --- downloaded into {0}; parse error {1}".format(tf, e))
             
                 # Note: not deleting the temp file.
         if not found:
@@ -1744,6 +1845,8 @@ def tmpdir(outputdir: str) -> str:
 
 
 def is_valid_filename(filename: str) -> bool:
+    # Some artifacts publish an md5 checksum of the md5 checksum, and so on,
+    # which is clearly wrong.  Do not count these files as published artifacts.
     return not (
         filename.endswith(".md5.md5") or
         filename.endswith(".md5.sha1") or
@@ -1801,11 +1904,23 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
     )
     parser.add_argument(
         '-x', '--no-local', dest='no_local', action='store_false', default=None,
-        help="do not search local URLs for the dependency"
+        help="do not search local URLs for the dependency."
     )
     parser.add_argument(
         '-t', '--no-remote-download', dest='do_remote_download', action='store_false', default=None,
         help="do not download files from the remote repo."
+    )
+    parser.add_argument(
+        '--no-pgp', dest='no_pgp', action='store_true', default=None,
+        help="do not perform PGP signature checking."
+    )
+    parser.add_argument(
+        '--require-valid-license', dest='require_valid_license', action='store_true', default=None,
+        help="Require that for all downloaded artifacts that define a license, it must be whitelisted."
+    )
+    parser.add_argument(
+        '--require-license', dest='require_license', action='store_true', default=None,
+        help="Require that all downloaded artifacts must define a license name or URL."
     )
     parser.add_argument(
         '-c', '--config', dest='config_file', default=None,
@@ -1820,8 +1935,8 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
     parsed = parser.parse_args()
     if parsed.config_file:
         CONFIG.load(str(parsed.config_file))
-    CONFIG.load(os.path.join(os.path.curdir, '.m2-get.json'))
-    CONFIG.load(os.path.join(os.path.expanduser("~"), '.m2-get.json'))
+    CONFIG.load(os.path.join(os.path.curdir, DEFAULT_CONFIGURATION_FILE_NAME))
+    CONFIG.load(os.path.join(os.path.expanduser("~"), DEFAULT_CONFIGURATION_FILE_NAME))
 
     if parsed.output is not None:
         CONFIG.outdir = parsed.output
@@ -1839,15 +1954,22 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
         CONFIG.do_remote_download = parsed.do_remote_download
     if parsed.error_file is not None:
         CONFIG.problem_file = parsed.error_file
+    if parsed.no_pgp is not None:
+        CONFIG.no_pgp = parsed.no_pgp
+    if parsed.require_valid_license is not None:
+        CONFIG.allow_unacceptable_licenses = not parsed.require_valid_license
+    if parsed.require_license is not None:
+        CONFIG.allow_no_license = not parsed.require_license
 
     if parsed.verbosity == 1:
         CONFIG.log_level = LOG_INFO
     elif parsed.verbosity == 2:
         CONFIG.log_level = LOG_DEBUG
-    elif parsed.verbosity >= 3:
+    elif parsed.verbosity is not None and parsed.verbosity >= 3:
         CONFIG.log_level = LOG_TRACE
 
-    setup_gpg(CONFIG.outdir)
+    if not CONFIG.no_pgp:
+        setup_gpg(CONFIG.outdir)
     
     for arg in parsed.artifacts:
         download_artifact(CONFIG.outdir, arg)
@@ -1855,11 +1977,17 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
 
 def exit_program(_code: int) -> None:
     if len(PROBLEMS) > 0:
-        print("\nDiscovered problems:")
-        print("    " + ("\n    ".join(PROBLEMS)))
+        print(EOL + "Discovered problems:")
+        print("    " + ("\n    ".join([str(p) for p in PROBLEMS])))
         if CONFIG.problem_file is not None:
             with open(CONFIG.problem_file, 'a') as f:
-                f.write("\n".join(PROBLEMS) + "\n")
+                if CONFIG.problem_file.endswith('.json'):
+                    json.dump([p.json() for p in PROBLEMS], f)
+                else:
+                    f.write("\n".join([str(p) for p in PROBLEMS]) + "\n")
+        for p in PROBLEMS:
+            p.clean_violations()
+
     # sys.exit(_code)
 
 
