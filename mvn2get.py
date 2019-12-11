@@ -242,6 +242,19 @@ class Problem:
                     info("{0} - file in violation of policies; removing {1}".format(self.artifact_id, f))
                     delete_file(f)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Problem):
+            return False
+        return (
+            self.msg == other.msg and
+            self.artifact_id == other.artifact_id and
+            self.files == other.files and
+            self.file_violation == other.file_violation
+        )
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
 
 PROBLEMS: List[Problem] = []
 
@@ -792,7 +805,7 @@ def maven_artifact_path_for_url(url: str) -> str:
 def convert_to_repo_urls_from_url(src_url: str) -> List[str]:
     """Heuristic to convert a URL into remote maven repo URLs."""
     for base_url in [*CONFIG.remote_repo_urls, *CONFIG.local_repo_urls]:
-        if not src_url.startswith(src_url):
+        if not src_url.startswith(base_url):
             continue
         parts = src_url[len(base_url):].split('/')
         if parts[-1].endswith(".jar") or parts[-1].endswith(".pom"):
