@@ -11,6 +11,7 @@ Bug fixes:
 Others:
 
 * Increased unit test coverage.
+* Added tools to help with scanning for broken POM or signatures.
 
 ## v1.0
 

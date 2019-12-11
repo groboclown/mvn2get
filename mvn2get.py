@@ -902,6 +902,8 @@ def verify_checksum(artifact_id: str, path: str, hash_name: str) -> None:
     elif not path.endswith('.asc'):
         # .asc files *should* have a checksum, but often they don't.
         info("  !> {0} has no {1} file".format(os.path.basename(path), hash_name))
+    else:
+        debug("  !> {0} has no {1} file".format(os.path.basename(path), hash_name))
 
 
 def verify_pgp(artifact_id: str, src_file: str, signature_file: str) -> None:
@@ -1800,7 +1802,7 @@ def parse_xml(filename: str, _tempdir: Optional[str] = None) -> xml.dom.minidom.
     
     contents = contents.replace(
         # plexus 1.0.3 fix...
-        '&oslash;', '-'
+        '&oslash;', 'o'
     ).replace(
         # javax/portlet/portlet-api fix...
         '&nbsp;', ' '

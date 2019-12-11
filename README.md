@@ -29,6 +29,7 @@ Current version: [1.0](https://github.com/groboclown/mvn2get/releases/download/v
    $ mvn2get.py --resolve org.apache.logging.log4j:log4j-slf4j-impl:2.12.1
     ```
 
+*Note* This tool currently only works for downloading from repositories that access groups with a `/` separator instead of a `.`. 
 
 ## Parameters
 
