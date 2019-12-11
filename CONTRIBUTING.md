@@ -1,5 +1,9 @@
 # How to Contribute
 
+## Use the Right Branch
+
+New development work happens in the `dev` branch.
+
 ## Follow the Decisions
 
 `mvn2get.py` made a few design decisions that should be followed.

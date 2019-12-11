@@ -49,7 +49,8 @@ import urllib.response
 from urllib.error import (HTTPError, URLError)
 
 
-VERSION = '1.0'
+VERSION = '1.1'
+
 
 # ---------------------------------------------------------------------------
 # User Configuration
@@ -1553,7 +1554,7 @@ class MavenVersion(object):
         return r[1:]
 
     def compare(self, that: 'MavenVersion') -> int:
-        """ returns == 0 if equal, < 0 if self > that, or > 0 if self < that """
+        """ returns == 0 if equal, < 0 if self later than that, or > 0 if self earlier than that """
         if self.version == that.version:
             return 0
         if that is None or len(that.version) <= 0:
@@ -1578,17 +1579,17 @@ class MavenVersion(object):
             if sv[0] == '.' and tv[0] == '-':
                 if sn:
                     # self is '.number', that is '-number'
-                    return 1
+                    return -1
                 else:
                     # self is '.qualifier', that is '-qualifier'
-                    return -1
+                    return 1
             if sv[0] == '-' and tv[0] == '.':
                 if sn:
                     # self is '-number', that is '.number'
-                    return -1
+                    return 1
                 else:
                     # self is '-qualifier', that is '.qualifier'
-                    return 1
+                    return -1
             # self and that both start with the same . or -
             if sn:
                 # numeric; natural order
@@ -1597,10 +1598,13 @@ class MavenVersion(object):
                 # qualifier
                 # "alpha" < "beta" < "milestone" < "rc" = "cr" < "snapshot" < "" = "final" = "ga" < "sp"
                 # Note that 'final' and 'ga' have already been omitted
-                if sv == 'cr':
-                    sv = 'rc'
-                if tv == 'cr':
-                    tv = 'rc'
+                if sv[1:] == 'cr':
+                    sv = sv[0] + 'rc'
+                if tv[1:] == 'cr':
+                    tv = tv[0] + 'rc'
+                if sv == tv:
+                    # cr -> rc conversion happened
+                    continue
                 if sv in QUALIFIER_ORDER:
                     if tv in QUALIFIER_ORDER:
                         si = QUALIFIER_ORDER.index(sv)
