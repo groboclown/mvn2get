@@ -172,6 +172,11 @@ mvn2get.py -r -p --parent io.dropwizard:dropwizard-metrics-graphite:2.0.0
 ```
 
 
+## Why Not Just Use Maven?
+
+Unfortunately, the existing tools written in Java only pull down the jar files and sometimes the POM files.  Some of them, like using Maven itself, pollute the pulled down files with their own dependencies.
+
+
 ## License
 
 [MIT](LICENSE)
