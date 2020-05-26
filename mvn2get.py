@@ -49,7 +49,7 @@ import urllib.response
 from urllib.error import (HTTPError, URLError)
 
 
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 
 
 # ---------------------------------------------------------------------------

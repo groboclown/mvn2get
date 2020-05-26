@@ -6,7 +6,7 @@ The tool will pull all the published files for the artifact and optionally pull 
 
 The tool is a single Python file that does not use external dependencies to operate.  It natively finds the resources and parses the POM files and verifies the downloaded files.  If you want to verify PGP signatures on the downloaded files, you will need to install the `gnupg` Python package.
 
-Current version: [1.0.1](https://github.com/groboclown/mvn2get/releases/download/v1.0.1/mvn2get.py) ([changes](CHANGELOG.md))
+Current version: [1.0.2](https://github.com/groboclown/mvn2get/releases/download/v1.0.2/mvn2get.py) ([changes](CHANGELOG.md))
 
 ## Usage
 
