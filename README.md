@@ -17,7 +17,7 @@ Current version: [1.0.2](https://github.com/groboclown/mvn2get/releases/download
     ```
 1. Download `mvn2get.py`
     ```bash
-    $ wget https://github.com/groboclown/mvn2get/releases/download/v1.0/mvn2get.py
+    $ wget https://github.com/groboclown/mvn2get/releases/download/v1.0.2/mvn2get.py
     $ chmod +x mvn2get.py
     ```
 1. (optional) [Configure](#configuration) local settings.

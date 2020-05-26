@@ -18,7 +18,11 @@ New development work happens in the `dev` branch.
 
 ### Copyright Update
 
-Make sure the copyright information and date in the program and the license file are up-to-date.
+Make sure the copyright information and date in the [program](mvn2get.py) and the [license file](LICENSE) are up-to-date.
+
+### Version Update
+
+Make sure the version number in the [program](mvn2get.py) and the [README.md]() file are updated.  Include the changes in the [changelog](CHANGELOG.md).
 
 ### Run MyPy
 
@@ -37,5 +41,11 @@ Make sure the unit tests pass with no errors.  Additionally, coverage must not g
 python -m coverage run --source . -m unittest discover -s . -p "*_test.py"
 
 # To view the generated coverage report
-python -m coverage report -m
+python -m coverage report -m mvn2get.py
 ```
+
+Previous release coverage:
+
+Statements: 1197
+Miss: 877
+Coverage: 27%
