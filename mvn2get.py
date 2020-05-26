@@ -599,6 +599,9 @@ def download_artifact(dest_dir: str, artifact_id: str) -> None:
         else:
             for d in deps:
                 add_problem(artifact_id, [], False, "requires missing dependency {0}".format(d))
+        # At this point, the download was successful.  Do not attempt to download again.
+        debug("Found {0} under {1}; no more download attempts.".format(artifact_id, source_url))
+        break
     if not found:
         add_problem(artifact_id, [], False, "Did not find any artifact at {0}".format(source_urls))
 
@@ -740,6 +743,8 @@ def get_files_in(url: str, outdir: str) -> List[Tuple[str, bool]]:
             if not file_url:
                 continue
             # Some repositories put extra junk in front of the link.
+            if file_url.startswith('http://') or file_url.startswith('https://'):
+                file_url = file_url[file_url.rindex('/') + 1:]
             while file_url[0] in '/:':
                 file_url = file_url[1:]
             if file_url and not file_url.startswith('..'):
@@ -1902,7 +1907,16 @@ def is_valid_filename(filename: str) -> bool:
         filename.endswith(".md5.md5") or
         filename.endswith(".md5.sha1") or
         filename.endswith(".sha1.md5") or
-        filename.endswith(".sha1.sha1")
+        filename.endswith(".sha1.sha1") or
+        filename.endswith(".asc.asc") or
+        filename.endswith(".md5.asc") or
+        filename.endswith(".sha1.asc") or
+        filename.endswith(".asc.asc.md5") or
+        filename.endswith(".asc.asc.sha1") or
+        filename.endswith(".md5.asc.md5") or
+        filename.endswith(".md5.asc.sha1") or
+        filename.endswith(".sha1.asc.md5") or
+        filename.endswith(".sha1.asc.sha1")
     )
 
 
