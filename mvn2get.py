@@ -49,7 +49,7 @@ import urllib.response
 from urllib.error import (HTTPError, URLError)
 
 
-VERSION = '1.0.2'
+VERSION = '1.0.3'
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +537,7 @@ HREF_PATTERN = re.compile(r'href\s*=\s*["\'](.*?)["\']')
 
 # ---------------------------------------------------------------------------
 # Download File Code
-SSL_CONTEXT = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+SSL_CONTEXT = ssl.create_default_context()
 
 
 def urlopen(url: str) -> Any:

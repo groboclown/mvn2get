@@ -1,5 +1,12 @@
 # Changes
 
+## v1.0.3
+
+Bug fixes:
+
+* Changed the SSL context creation to use the default, more secure implementation.
+
+
 ## v1.0.2
 
 Bug fixes:
