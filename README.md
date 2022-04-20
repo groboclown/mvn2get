@@ -2,7 +2,7 @@
 
 Simple tool to get artifacts from Maven 2 repositories.
 
-The tool will pull all the published files for the artifact and optionally pull the declared runtime dependencies.  It will also validate the checksums and PGP signatures.  It can also validate whether the declared license is one of a whitelisted set.
+The tool will pull all the published files for the artifact and optionally pull the declared runtime dependencies.  It will also validate the checksums and PGP signatures.  It can also validate whether the declared license is one of a allowed set.
 
 The tool is a single Python file that does not use external dependencies to operate.  It natively finds the resources and parses the POM files and verifies the downloaded files.  If you want to verify PGP signatures on the downloaded files, you will need to install the `gnupg` Python package.
 
@@ -65,7 +65,7 @@ Most of these options can have a default value declared in the [configuration fi
 * **--no-pgp**
     * Do not verify PGP signatures.
 * **--require-valid-license**
-    * Require that for all downloaded artifacts that define a license, it must be whitelisted.  If it does not have a license, then it is allowed.  Note that if you also specify `--require-license`, then all downloaded artifacts must have a whitelisted license.
+    * Require that for all downloaded artifacts that define a license, it must be allowed.  If it does not have a license, then it is allowed.  Note that if you also specify `--require-license`, then all downloaded artifacts must have an allowed license.
 * **--require-license**
     * Require that all downloaded artifacts must define a license name or URL.
 * **-c CONFIG_FILE, --config CONFIG_FILE**

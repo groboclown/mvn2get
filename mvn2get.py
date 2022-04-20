@@ -2000,7 +2000,7 @@ repo.  All the files in the remote repo for the artifact will be pulled down."""
     )
     parser.add_argument(
         '--require-valid-license', dest='require_valid_license', action='store_true', default=None,
-        help="Require that for all downloaded artifacts that define a license, it must be whitelisted."
+        help="Require that for all downloaded artifacts that define a license, it must be explicitly allowed."
     )
     parser.add_argument(
         '--require-license', dest='require_license', action='store_true', default=None,
